@@ -73,6 +73,36 @@ def doctor(online=False):
     return 0
 
 
+def _chat_help():
+    print("命令: /new 新会话 | /sessions 列出会话 | /resume ID 切换会话 | /open ID 查看报告 | /exit 退出")
+
+
+def _chat_sessions(store):
+    runs = store.list_runs()
+    if not runs:
+        print("暂无历史会话。")
+        return
+    print("最近会话:")
+    for run in runs[:12]:
+        question = run["question"].replace("\n", " ")[:52]
+        print(f"  {run['id'][:8]}  {run['status']:<9}  {question}")
+
+
+def _chat_run(store, prefix):
+    matches = [run for run in store.list_runs() if run["id"].startswith(prefix)]
+    if len(matches) != 1:
+        raise ValueError("会话 ID 不唯一或不存在")
+    return store.get_run(matches[0]["id"])
+
+
+def _chat_open(store, prefix):
+    run = _chat_run(store, prefix)
+    result = run.get("result") or {}
+    report = result.get("report") if isinstance(result, dict) else None
+    print(report or json.dumps(result, ensure_ascii=False, indent=2))
+    return run
+
+
 def main(argv=None):
     # Like Reasonix, a bare executable opens the interactive session. Explicit
     # subcommands remain available for scripts and automation.
@@ -94,16 +124,48 @@ def main(argv=None):
                 result = run_research(args.question, store, allowed_files=allowed)
                 write_report(home, result)
                 return 0 if result["status"] == "completed" else 1
-            print("输入问题；/exit 退出。每次请求重新加载已批准记忆。")
+            active = None
+            print("┌─ qagent 研究会话 ───────────────────────────────────────┐")
+            print("│ 输入问题，或输入 /help 查看会话命令。                    │")
+            print("└──────────────────────────────────────────────────────────┘")
             while True:
                 try:
-                    question = input("qagent> ").strip()
+                    label = active["id"][:8] if active else "new"
+                    question = input(f"qagent [{label}]> ").strip()
                 except EOFError:
                     break
                 if question in ("/exit", "/quit"):
                     break
-                if question:
-                    write_report(home, run_research(question, store, allowed_files=allowed))
+                if not question:
+                    continue
+                if question in ("/help", "/?"):
+                    _chat_help()
+                    continue
+                if question == "/new":
+                    active = None
+                    print("已切换到新会话。")
+                    continue
+                if question == "/sessions":
+                    _chat_sessions(store)
+                    continue
+                if question.startswith("/open "):
+                    active = _chat_open(store, question.split(None, 1)[1].strip())
+                    continue
+                if question.startswith("/resume "):
+                    active = _chat_open(store, question.split(None, 1)[1].strip())
+                    print(f"已切换到会话 {active['id'][:8]}；下一条问题会带上该报告摘要。")
+                    continue
+                if question.startswith("/"):
+                    print("未知命令，输入 /help 查看可用命令。")
+                    continue
+                prompt = question
+                if active and isinstance(active.get("result"), dict):
+                    previous = active["result"].get("report", "")
+                    if previous:
+                        prompt = f"请继续此前会话。此前报告摘要如下：\n{previous[-6000:]}\n\n新的问题：{question}"
+                result = run_research(prompt, store, allowed_files=allowed)
+                active = store.get_run(result["run_id"])
+                write_report(home, result)
         elif args.command == "memory":
             action = args.action
             if action in ("list", "pending"):
