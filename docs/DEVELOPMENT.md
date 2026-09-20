@@ -1,7 +1,7 @@
 # 首版开发与验收
 
 ## 产品边界
-分发补充：npm 包仅是 Node.js 20+ 启动器，透传参数、标准输入输出和退出码，以 uv run --locked 运行原有 Python CLI。无需预装 Python 或 uv；优先使用本机 uv，否则下载固定版本官方 uv 并验证 SHA256，再准备 Python 3.12 和依赖。保留调用方工作目录，无 shell 参数拼接，不在 npm install 阶段执行脚本。包采用文件白名单，标记 private=true，不发布到 npm registry；通过私有 GitHub Git URL 安装，下载者需要 GitHub 仓库权限但不需要 npm 登录。当前 main 是空基线，安装时指定 feat/research-agent-mvp；合并后使用默认分支。CI 在 Windows/Ubuntu 验证 Node 20+ 启动器及实际 tgz 的 npx 启动。
+分发补充：npm 包仅是 Node.js 20+ 启动器，透传参数、标准输入输出和退出码，以 uv run --locked 运行原有 Python CLI。无需预装 Python 或 uv；优先使用本机 uv，否则下载固定版本官方 uv 并验证 SHA256，再准备 Python 3.12 和依赖。保留调用方工作目录，无 shell 参数拼接，不在 npm install 阶段执行脚本。包采用 MIT 开源许可，包名为 qagent-research，CLI 命令为 qagent；qagent 名称已被 npm 上的其他包占用，不能覆盖。公开 GitHub 仓库和 npm registry 安装都不要求下载者登录 npm。CI 在 Windows/Ubuntu 验证 Node 20+ 启动器及实际 tgz 的 npx 启动。
 本地 CLI 独立 Agent，用户主动请求新闻/公告/研报研究，个人记忆经确认后生效，多 ETF 动量轮动。免费公开源；不实盘、不后台监控、不网页、不任意代码执行。
 
 ## 基线与模块契约

@@ -1,9 +1,8 @@
 {
-  "name": "quant-research-agent",
+  "name": "qagent-research",
   "version": "0.1.0",
   "description": "Local evidence-driven ETF research agent (Python runtime via uv)",
-  "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "bin": { "qagent": "bin/qagent.cjs" },
   "engines": { "node": ">=20" },
   "repository": { "type": "git", "url": "git+https://github.com/magnesium037-dev/quant-research-agent.git" },

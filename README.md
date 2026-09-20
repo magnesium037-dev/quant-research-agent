@@ -16,20 +16,19 @@ Python 3.12；使用现有 OpenAI Chat Completions 兼容服务。行情和资�
 
 自动准备 uv 支持 Windows x64、Linux x64；其他平台请先按 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv，Python 科学计算依赖仍需该平台支持。自动下载使用固定版本及 SHA256 校验，失败会停止并给出提示。
 
-从私有 GitHub 仓库下载安装（不需要 npm 登录，但下载者需要 GitHub 仓库权限）：
+发布到 npm 后，安装包名为 `qagent-research`，CLI 命令仍然是 `qagent`：
 
 ```powershell
-# 当前开发分支；合并到 main 后去掉 #feat/research-agent-mvp
-npm install -g git+https://github.com/magnesium037-dev/quant-research-agent.git#feat/research-agent-mvp
+npm install -g qagent-research
 qagent doctor
 qagent chat
 # 临时运行，不全局安装
-npx --yes --package git+https://github.com/magnesium037-dev/quant-research-agent.git#feat/research-agent-mvp qagent --help
+npx --yes qagent-research --help
 ```
 
 要求 Node.js 20+。包包含 Python 源码及 uv.lock，不包含密钥、个人记忆和运行缓存。模型环境变量与下方相同，相对材料路径以调用命令时的目录为准。运行环境缓存在 `~/.cache/quant-research-agent`，无需向全局安装目录写入；研究数据独立保存在 `~/.qagent`。npm 安装阶段不运行下载脚本，首次运行 qagent 时准备运行环境。
 
-仓库当前 `main` 是空基线，必须指定开发分支；正式合并后使用默认分支即可。GitHub 仓库权限由 Git 的凭据管理处理，与 npm 登录无关。Node 18 及以下不支持当前启动器。
+当前仓库也可直接从公开 GitHub 分支安装：`npm install -g git+https://github.com/magnesium037-dev/quant-research-agent.git#feat/research-agent-mvp`。公开 npm 的包名不能使用 `qagent`，因为该名称已被其他项目占用；本项目使用 `qagent-research`，安装后命令仍为 `qagent`。Node 18 及以下不支持当前启动器。
 
 ### Python 开发安装
 
