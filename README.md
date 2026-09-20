@@ -19,16 +19,16 @@ Python 3.12；使用现有 OpenAI Chat Completions 兼容服务。行情和资�
 发布到 npm 后，安装包名为 `qagent-research`，CLI 命令仍然是 `qagent`：
 
 ```powershell
-npm install -g github:magnesium037-dev/quant-research-agent
+npm install -g --allow-git github:magnesium037-dev/quant-research-agent
 qagent doctor
 qagent chat
 # 临时运行，不全局安装
-npx --yes qagent-research --help
+npx --yes --allow-git --package github:magnesium037-dev/quant-research-agent qagent --help
 ```
 
 要求 Node.js 20+。包包含 Python 源码及 uv.lock，不包含密钥、个人记忆和运行缓存。模型环境变量与下方相同，相对材料路径以调用命令时的目录为准。运行环境缓存在 `~/.cache/quant-research-agent`，无需向全局安装目录写入；研究数据独立保存在 `~/.qagent`。npm 安装阶段不运行下载脚本，首次运行 qagent 时准备运行环境。
 
-当前公开仓库默认分支就是可运行分支，因此不需要 `git+` 前缀或分支后缀。公开 npm 的包名不能使用 `qagent`，因为该名称已被其他项目占用；本项目保留 npm 元数据名 `qagent-research`，从 GitHub 安装后命令仍为 `qagent`。Node 18 及以下不支持当前启动器。
+当前公开仓库默认分支就是可运行分支，因此不需要 `git+` 前缀或分支后缀。新版 npm 可能默认禁用 Git 依赖，需要显式加 `--allow-git`。公开 npm 的包名不能使用 `qagent`，因为该名称已被其他项目占用；本项目保留 npm 元数据名 `qagent-research`，从 GitHub 安装后命令仍为 `qagent`。Node 18 及以下不支持当前启动器。
 
 ### Python 开发安装
 
