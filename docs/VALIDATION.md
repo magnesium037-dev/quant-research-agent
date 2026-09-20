@@ -1,6 +1,6 @@
 # 验收记录
 
-状态：本地实现完成，远端发布与部分在线验收待完成。离线测试与在线接口探测的结果分别记录，不将缺失凭据或接口错误标为成功。
+状态：本地实现完成，已发布到私有仓库的 [PR #1](https://github.com/magnesium037-dev/quant-research-agent/pull/1)，未合并；部分在线验收待完成。离线测试与在线接口探测的结果分别记录，不将缺失凭据或接口错误标为成功。
 
 ## 环境
 Windows，Python 3.12；Git 仓库 main 空初始化提交，开发分支 feat/research-agent-mvp。
