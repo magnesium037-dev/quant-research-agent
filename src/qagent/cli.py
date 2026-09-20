@@ -74,6 +74,12 @@ def doctor(online=False):
 
 
 def main(argv=None):
+    # Like Reasonix, a bare executable opens the interactive session. Explicit
+    # subcommands remain available for scripts and automation.
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        argv = ["chat"]
     args = parser().parse_args(argv)
     store = None
     try:

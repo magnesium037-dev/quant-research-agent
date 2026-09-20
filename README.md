@@ -48,6 +48,8 @@ DeepSeek V4.1 Flash 的官方 API 名称是 `deepseek-flash`，见 [DeepSeek 官
 ## 使用
 
 ```powershell
+# 裸运行直接进入交互会话
+qagent
 uv run qagent chat
 uv run qagent ask '最近一周有哪些影响宽基ETF的事件？请列证据与反证。'
 uv run qagent ask '分析这份材料，区分事实与作者观点' --file 'C:/Research/report.pdf'
