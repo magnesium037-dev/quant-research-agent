@@ -10,6 +10,28 @@ Python 3.12；使用现有 OpenAI Chat Completions 兼容服务。行情和资�
 
 ## 安装与模型配置
 
+### npm / npx 包
+
+需要 Node.js 20+。npm 包包含完整应用代码；首次启动自动准备 uv、Python 3.12 和锁定依赖，可能需要数分钟和较多磁盘空间，之后复用安装环境。需要能访问 npm、GitHub Releases 和 Python 包下载服务。
+
+自动准备 uv 支持 Windows x64、Linux x64；其他平台请先按 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv，Python 科学计算依赖仍需该平台支持。自动下载使用固定版本及 SHA256 校验，失败会停止并给出提示。
+
+发布到 npm 后，在任意终端下载安装：
+
+```powershell
+npm install -g quant-research-agent
+qagent doctor
+qagent chat
+# 不全局安装也可以：
+npx quant-research-agent --help
+```
+
+包包含 Python 源码及 uv.lock，不包含密钥、个人记忆和运行缓存。模型环境变量与下方相同，相对材料路径以调用命令时的目录为准。运行环境缓存在 `~/.cache/quant-research-agent`，无需向全局安装目录写入；研究数据独立保存在 `~/.qagent`。npm 安装阶段不运行下载脚本，首次运行 qagent 时准备运行环境。
+
+开发者可在发布前执行 `npm pack`，再用 `npx --yes --package ./quant-research-agent-0.1.0.tgz qagent --help` 验证实际安装包。公共 npm 分发会公开包内源码，GitHub 仓库可继续保持私有。
+
+### Python 开发安装
+
 ```powershell
 uv sync --locked
 $env:LLM_BASE_URL = 'https://api.deepseek.com'

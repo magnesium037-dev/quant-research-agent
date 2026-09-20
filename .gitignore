@@ -14,3 +14,5 @@ dist/
 *.db-shm
 smoke-results/
 .playwright-mcp/
+node_modules/
+*.tgz
