@@ -39,4 +39,6 @@ Windows，Python 3.12；Git 仓库 main 空初始化提交，开发分支 feat/r
 
 模型在线验收补测（2026-09-20）：此前仅检查环境变量，遗漏了用户已经提供的测试凭据；本次将凭据仅注入临时进程环境，未持久化密钥。DeepSeek 官方 API 返回 deepseek-flash/deepseek-v4-pro；deepseek-flash 的真实工具调用探测通过。使用实际 npm 全局安装包运行 ask，真实模型调用 read_material 读取明确标记的合成材料，生成六部分报告及 3 条真实段落引用，运行状态 completed。未请求新闻、回测或写入记忆；这项验证不代表真实行情回测已通过。
 
+配置适配补测：读取用户已有的 Reasonix 配置成功，旧模型名映射为 `deepseek-flash`，doctor 在线工具探测通过；密钥未显示或写入 qagent 数据。
+
 用户已完成 GitHub CLI 授权，账号 magnesium037-dev。Windows/Ubuntu Python 3.12 的 39 项测试和新增 npm 的 4 项测试、实际打包启动均通过，详见 PR checks。npm 发布仍待 npm 账号登录。

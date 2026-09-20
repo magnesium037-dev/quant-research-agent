@@ -4,10 +4,12 @@ import math
 import os
 import re
 from datetime import date
+from pathlib import Path
 
 MAX_MODEL_CALLS, MAX_TOOL_CALLS, MAX_EXPERIMENTS = 12, 24, 12
 MAX_CONTEXT = 160_000
 SECTIONS = ("证据", "影响推理", "反证", "未知项", "下一步验证")
+MODEL_ALIASES = {"deepseek-v4-flash": "deepseek-flash", "deepseek-v4-flash-vision-exp": "deepseek-flash"}
 
 
 def clean(value):
@@ -24,16 +26,43 @@ def encoded(value):
     return json.dumps(clean(value), ensure_ascii=False, allow_nan=False)
 
 
+def model_config():
+    """Resolve environment settings, then the shared Reasonix config."""
+    values = {"base_url": os.environ.get("LLM_BASE_URL"),
+              "model": os.environ.get("LLM_MODEL"), "api_key": os.environ.get("LLM_API_KEY")}
+    source = "environment"
+    config_path = os.environ.get("QAGENT_CONFIG") or str(Path.home() / ".reasonix" / "config.json")
+    if not all(values.values()):
+        try:
+            config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+            values["api_key"] = values["api_key"] or config.get("apiKey")
+            values["model"] = values["model"] or config.get("model")
+            values["base_url"] = values["base_url"] or config.get("baseUrl") or config.get("base_url")
+            if any(values.values()):
+                source = config_path
+        except (OSError, ValueError, TypeError):
+            pass
+    values["base_url"] = values["base_url"] or "https://api.deepseek.com"
+    values["model"] = values["model"] or "deepseek-flash"
+    values["model"] = MODEL_ALIASES.get(values["model"], values["model"])
+    if values["api_key"]:
+        os.environ.setdefault("LLM_API_KEY", str(values["api_key"]))
+    values["source"] = source
+    return values
+
+
 def client_from_env():
-    missing = [k for k in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY") if not os.environ.get(k)]
+    config = model_config()
+    missing = [key for key in ("base_url", "model", "api_key") if not config.get(key)]
     if missing:
-        raise ValueError("缺少模型配置: " + ", ".join(missing))
+        labels = {"base_url": "LLM_BASE_URL", "model": "LLM_MODEL", "api_key": "LLM_API_KEY"}
+        raise ValueError("缺少模型配置: " + ", ".join(labels[key] for key in missing))
     from urllib.parse import urlsplit
-    url = urlsplit(os.environ["LLM_BASE_URL"])
+    url = urlsplit(config["base_url"])
     if url.scheme != "https" or not url.hostname or url.username or url.password:
         raise ValueError("LLM_BASE_URL 必须是无内嵌凭据的 HTTPS 地址")
     from openai import OpenAI
-    return OpenAI(base_url=os.environ["LLM_BASE_URL"], api_key=os.environ["LLM_API_KEY"],
+    return OpenAI(base_url=config["base_url"], api_key=config["api_key"],
                   timeout=45.0, max_retries=0)
 
 
@@ -205,7 +234,7 @@ def run_research(question, store, client=None, model=None, allowed_files=None):
     try:
         owned_client = client is None
         client = client or client_from_env()
-        model = model or os.environ.get("LLM_MODEL")
+        model = model or model_config()["model"]
         if not model:
             raise ValueError("缺少 LLM_MODEL")
         if owned_client:

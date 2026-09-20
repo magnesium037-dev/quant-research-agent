@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from .agent import backtest_report, clean, client_from_env, probe_tools, run_research
+from .agent import backtest_report, clean, client_from_env, model_config, probe_tools, run_research
 
 
 def parser():
@@ -59,14 +59,17 @@ def write_report(home, result):
 
 
 def doctor(online=False):
-    presence = {key: bool(os.environ.get(key)) for key in ("LLM_BASE_URL", "LLM_MODEL", "LLM_API_KEY")}
-    output({"python": sys.version.split()[0], "configuration_present": presence})
+    config = model_config()
+    presence = {"LLM_BASE_URL": bool(config["base_url"]), "LLM_MODEL": bool(config["model"]),
+                "LLM_API_KEY": bool(config["api_key"])}
+    output({"python": sys.version.split()[0], "configuration_present": presence,
+            "configuration_source": config["source"], "model": config["model"]})
     if not all(presence.values()):
         return 1
     if online:
         client = client_from_env()
         try:
-            probe_tools(client, os.environ["LLM_MODEL"])
+            probe_tools(client, config["model"])
         finally:
             client.close()
         output("工具调用能力验证成功。")

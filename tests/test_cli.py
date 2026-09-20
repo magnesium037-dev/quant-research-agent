@@ -1,6 +1,8 @@
 import contextlib
 import io
 import os
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -26,8 +28,18 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("SECRET", stream.getvalue())
 
     def test_doctor_missing_config(self):
-        with patch.dict(os.environ, {}, clear=True), contextlib.redirect_stdout(io.StringIO()):
+        with patch.dict(os.environ, {"QAGENT_CONFIG": str(Path(tempfile.gettempdir()) / "qagent-no-config.json")}, clear=True), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(main(["doctor"]), 1)
+
+    def test_reasonix_config_is_used_without_printing_key(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.json"
+            path.write_text('{"apiKey":"sk-test-secret-1234567890","model":"deepseek-v4-flash"}', encoding="utf-8")
+            stream = io.StringIO()
+            with patch.dict(os.environ, {"QAGENT_CONFIG": str(path)}, clear=True), contextlib.redirect_stdout(stream):
+                self.assertEqual(main(["doctor"]), 0)
+            self.assertIn("deepseek-flash", stream.getvalue())
+            self.assertNotIn("sk-test-secret", stream.getvalue())
 
 
 if __name__ == "__main__":

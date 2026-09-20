@@ -41,6 +41,8 @@ uv run qagent doctor
 uv run qagent doctor --online
 ```
 
+如果已经配置了 Reasonix，qagent 在环境变量缺失时会读取 `~/.reasonix/config.json` 的 `apiKey` 和 `model`，默认使用 `https://api.deepseek.com`；显式的 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY` 优先。导入的密钥只用于当前进程，不写入 qagent 数据库或报告，也可用 `QAGENT_CONFIG` 指定同格式文件。
+
 DeepSeek V4.1 Flash 的官方 API 名称是 `deepseek-flash`，见 [DeepSeek 官方文档](https://api-docs.deepseek.com/)。服务仍通过显式配置选择，不静默替换模型。`doctor --online` 会产生一次真实 API 调用；普通 doctor 不联网。
 
 工具能力探测使用 `tool_choice=auto` 并检查实际返回的工具名及参数，兼容 DeepSeek 默认思考模式；该模式不接受强制指定工具，见 [接口说明](https://api-docs.deepseek.com/api/create-chat-completion/)。探测失败会明确停止，不改用其他模型。
