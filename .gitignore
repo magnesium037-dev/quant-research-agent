@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.env.*
+.qagent/
+.codegraph/
+.pytest_cache/
+build/
+dist/
+*.db
+*.db-wal
+*.db-shm
+smoke-results/
+.playwright-mcp/
