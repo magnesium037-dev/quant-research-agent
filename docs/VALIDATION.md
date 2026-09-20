@@ -6,7 +6,7 @@
 
 Windows Node.js 22：4 项 Node 离线测试通过；真实官方 uv 0.12.17 下载、SHA256 校验、解压及版本检查通过。实际 tgz 通过 npx 启动；独立全局安装前缀中的 qagent 安装 89 个锁定依赖后成功启动，中文记忆新增和重启读取通过。打包白名单共 16 个文件，不包含凭据、研究数据库或缓存。
 
-自动准备 uv 支持 Windows/Linux x64，下载当前使用直连 HTTPS；受限网络可先按官方说明安装 uv。公共 npm 发布需本机完成 npm 登录；未发布前不能宣称 registry 安装成功。新增跨平台 CI 执行 npm 测试、打包及 tgz 的 npx 启动。
+自动准备 uv 支持 Windows/Linux x64，下载当前使用直连 HTTPS；受限网络可先按官方说明安装 uv。包标记为 private，不发布 npm registry；GitHub Git URL 安装不需要 npm 登录。当前分支安装时必须指定 `#feat/research-agent-mvp`，合并后使用默认分支。新增跨平台 CI 执行 npm 测试、打包及 tgz 的 npx 启动。
 
 状态：本地实现完成，已发布到私有仓库的 [PR #1](https://github.com/magnesium037-dev/quant-research-agent/pull/1)，未合并；部分在线验收待完成。离线测试与在线接口探测的结果分别记录，不将缺失凭据或接口错误标为成功。
 

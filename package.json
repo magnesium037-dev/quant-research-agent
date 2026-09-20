@@ -2,7 +2,7 @@
   "name": "quant-research-agent",
   "version": "0.1.0",
   "description": "Local evidence-driven ETF research agent (Python runtime via uv)",
-  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" },
+  "private": true,
   "license": "UNLICENSED",
   "bin": { "qagent": "bin/qagent.cjs" },
   "engines": { "node": ">=20" },
