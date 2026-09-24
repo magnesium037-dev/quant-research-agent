@@ -9,7 +9,10 @@ const { spawnSync } = require('node:child_process');
 const VERSION = '0.12.17';
 const ASSETS = {
   'win32-x64': ['uv-x86_64-pc-windows-msvc.zip', 'a252121d5b59398fcb137c6ea448176459a44010f33f67e0072305a637119ca7'],
+  'darwin-arm64': ['uv-aarch64-apple-darwin.tar.gz', '85f00cbdc6dd3e97eba4c31b4d014375a9fdfe8f570023b84e5102fc3456896b'],
+  'darwin-x64': ['uv-x86_64-apple-darwin.tar.gz', '8dcf05a8c809bb3c471d2b614788ba27a6e41298fc8c31ac84b5f4339fd468e5'],
   'linux-x64': ['uv-x86_64-unknown-linux-gnu.tar.gz', 'fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63'],
+  'linux-arm64': ['uv-aarch64-unknown-linux-gnu.tar.gz', 'd636d1b678e9e7f367ecb22b46bd1cabbed234d6bc3b4d96365d2b507f72f86c'],
 };
 
 async function download(url, fetchImpl = fetch) {
@@ -38,11 +41,14 @@ async function download(url, fetchImpl = fetch) {
   throw new Error('Too many uv download redirects.');
 }
 
-async function ensureUv({ platform = process.platform, arch = process.arch,
+async function ensureUv({ platform = process.platform, arch = process.arch, env = process.env,
   cache = path.join(os.homedir(), '.cache', 'quant-research-agent'), run = spawnSync,
   fetchArchive = download } = {}) {
   const existing = run('uv', ['--version'], { stdio: 'ignore', shell: false, timeout: 10000 });
   if (existing.status === 0) return 'uv';
+  if (platform === 'linux' && (env.TERMUX_VERSION || env.PREFIX?.includes('/com.termux/'))) {
+    throw new Error('Termux requires uv from the Termux environment. Install it with the Termux package manager, then retry qagent.');
+  }
   const asset = ASSETS[`${platform}-${arch}`];
   if (!asset) throw new Error(`Automatic setup does not support ${platform}/${arch}; install uv from https://docs.astral.sh/uv/getting-started/installation/ and retry.`);
   const folder = path.join(cache, `uv-${VERSION}-${platform}-${arch}`);
@@ -64,7 +70,9 @@ async function ensureUv({ platform = process.platform, arch = process.arch,
         { shell: false, stdio: 'ignore', timeout: 60000, env: { ...process.env, QAGENT_UV_ARCHIVE: archive, QAGENT_UV_EXTRACT: output } })
       : run('tar', ['-xzf', archive, '-C', output], { shell: false, stdio: 'ignore', timeout: 60000 });
     if (extracted.status !== 0) throw new Error('Unable to extract uv; Windows requires PowerShell, Linux requires tar.');
-    const unpacked = platform === 'win32' ? path.join(output, 'uv.exe') : path.join(output, 'uv-x86_64-unknown-linux-gnu', 'uv');
+    const unpacked = platform === 'win32'
+      ? path.join(output, 'uv.exe')
+      : path.join(output, asset[0].replace(/\.tar\.gz$/, ''), 'uv');
     fs.chmodSync(unpacked, 0o755);
     try { fs.renameSync(unpacked, executable); }
     catch (error) { if (!fs.existsSync(executable)) throw error; }

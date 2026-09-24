@@ -10,6 +10,30 @@ from qagent.cli import main, parser
 
 
 class CliTests(unittest.TestCase):
+    def test_chat_followup_context_and_thinking_switch(self):
+        from qagent.agent import run_research
+        from test_agent import FakeClient, message
+        import json
+        requests = []
+        def fake_run(question, store, **kwargs):
+            client = FakeClient([message(text=json.dumps({"reply": "你好，我能查询资料。"}))])
+            result = run_research(question, store, client, "fake", **kwargs)
+            requests.append((question, kwargs, client.requests))
+            return result
+        with tempfile.TemporaryDirectory() as folder:
+            stream = io.StringIO()
+            with patch.dict(os.environ, {"QAGENT_HOME": folder}), patch("qagent.cli.run_research", side_effect=fake_run), \
+                 patch("builtins.input", side_effect=["你好", "/context", "/thinking off", "你能做什么", "/new", "再来", "/exit"]), \
+                 contextlib.redirect_stdout(stream):
+                self.assertEqual(main(["chat"]), 0)
+            self.assertEqual(requests[1][0], "你能做什么")
+            self.assertEqual(requests[1][1]["previous"]["question"], "你好")
+            self.assertIsNone(requests[2][1]["previous"])
+            self.assertIn('"messages"', stream.getvalue())
+            self.assertIn("[上下文]", stream.getvalue())
+            self.assertEqual(stream.getvalue().count("reasoning roundtrip"), 1)
+            self.assertNotIn("## 证据", stream.getvalue())
+
     def test_commands(self):
         for command in (["ask", "test", "--file", "x.pdf"], ["chat"], ["memory", "approve", "a"],
                         ["runs", "show", "b"], ["backtest", "--symbols", "510300", "510500", "--start", "2020-01-01", "--end", "2021-01-01"]):

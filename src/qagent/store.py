@@ -3,9 +3,11 @@
 import hashlib
 import json
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
+
+MEMORY_CATEGORIES = ("preference", "project", "decision", "method", "constraint", "general")
 
 
 def _now():
@@ -32,6 +34,7 @@ class Store:
         self.connection.executescript("""
             CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY, text TEXT NOT NULL, source TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'general',
                 status TEXT NOT NULL CHECK(status IN ('approved','pending','rejected')),
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             );
@@ -54,7 +57,32 @@ class Store:
                 holdout_start TEXT, holdout_end TEXT,
                 holdout_previously_viewed INTEGER NOT NULL, created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS channel_bindings (
+                channel TEXT NOT NULL, account_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL, conversation_type TEXT NOT NULL,
+                subject_id TEXT NOT NULL, subject_name TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY(channel, account_id, conversation_id)
+            );
+            CREATE TABLE IF NOT EXISTS channel_pairings (
+                id TEXT PRIMARY KEY, channel TEXT NOT NULL, account_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL, conversation_type TEXT NOT NULL,
+                subject_id TEXT NOT NULL, subject_name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
+                code TEXT NOT NULL, expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(channel, account_id, conversation_id)
+            );
+            CREATE TABLE IF NOT EXISTS channel_sessions (
+                channel TEXT NOT NULL, account_id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL, last_run_id TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(channel, account_id, conversation_id)
+            );
         """)
+        if "category" not in {row[1] for row in self.connection.execute("PRAGMA table_info(memories)")}:
+            with self.connection:
+                self.connection.execute("ALTER TABLE memories ADD COLUMN category TEXT NOT NULL DEFAULT 'general'")
 
     def _memory(self, memory_id):
         row = self.connection.execute("SELECT * FROM memories WHERE id=?", (memory_id,)).fetchone()
@@ -62,14 +90,17 @@ class Store:
             raise ValueError("记忆不存在")
         return dict(row)
 
-    def memory_add(self, text, source="user", pending=False):
+    def memory_add(self, text, source="user", pending=False, category="general"):
         text, source = _text(text), _text(source)
         if type(pending) is not bool:
             raise ValueError("pending 必须为布尔值")
+        if category not in MEMORY_CATEGORIES:
+            raise ValueError("无效记忆分类")
         memory_id, now = uuid4().hex, _now()
         with self.connection:
-            self.connection.execute("INSERT INTO memories VALUES (?,?,?,?,?,?)",
-                (memory_id, text, source, "pending" if pending else "approved", now, now))
+            self.connection.execute(
+                "INSERT INTO memories(id,text,source,category,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                (memory_id, text, source, category, "pending" if pending else "approved", now, now))
         return self._memory(memory_id)
 
     def memory_list(self, status="approved"):
@@ -199,6 +230,95 @@ class Store:
                 (experiment_id, run_id, params, snapshot_id, _json(result), status, start, end, int(viewed), _now()))
             return self._experiment(self.connection.execute(
                 "SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone())
+
+    def channel_binding(self, channel, account_id, conversation_id):
+        row = self.connection.execute(
+            "SELECT * FROM channel_bindings WHERE channel=? AND account_id=? AND conversation_id=?",
+            (channel, account_id, conversation_id)).fetchone()
+        return dict(row) if row else None
+
+    def channel_binding_list(self, channel, account_id):
+        return [dict(row) for row in self.connection.execute(
+            "SELECT * FROM channel_bindings WHERE channel=? AND account_id=? ORDER BY updated_at DESC",
+            (channel, account_id))]
+
+    def pairing_request(self, channel, account_id, conversation_id, conversation_type,
+                        subject_id, subject_name, code, ttl_seconds=3600):
+        now = _now()
+        expires = (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
+        with self.connection:
+            row = self.connection.execute(
+                "SELECT * FROM channel_pairings WHERE channel=? AND account_id=? AND conversation_id=?",
+                (channel, account_id, conversation_id)).fetchone()
+            if row and row["status"] == "pending" and row["expires_at"] > now:
+                return dict(row), False
+            pairing_id = row["id"] if row else uuid4().hex
+            self.connection.execute(
+                "INSERT INTO channel_pairings(id,channel,account_id,conversation_id,conversation_type,"
+                "subject_id,subject_name,status,code,expires_at,created_at,updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(channel,account_id,conversation_id) DO UPDATE SET "
+                "conversation_type=excluded.conversation_type,subject_id=excluded.subject_id,"
+                "subject_name=excluded.subject_name,status='pending',code=excluded.code,"
+                "expires_at=excluded.expires_at,updated_at=excluded.updated_at",
+                (pairing_id, channel, account_id, conversation_id, conversation_type,
+                 subject_id, subject_name, "pending", code, expires, now, now))
+            result = self.connection.execute("SELECT * FROM channel_pairings WHERE id=?", (pairing_id,)).fetchone()
+            return dict(result), True
+
+    def pairing_list(self, status="pending"):
+        if status not in ("pending", "approved", "rejected"):
+            raise ValueError("无效配对状态")
+        now = _now()
+        return [dict(row) for row in self.connection.execute(
+            "SELECT * FROM channel_pairings WHERE status=? AND (status!='pending' OR expires_at>?) "
+            "ORDER BY created_at", (status, now))]
+
+    def pairing_decide(self, pairing_id, status):
+        if status not in ("approved", "rejected"):
+            raise ValueError("无效配对决定")
+        with self.connection:
+            row = self.connection.execute("SELECT * FROM channel_pairings WHERE id=?", (pairing_id,)).fetchone()
+            if row is None:
+                raise ValueError("配对请求不存在")
+            pairing = dict(row)
+            if pairing["status"] == status:
+                return pairing
+            if pairing["status"] != "pending" or pairing["expires_at"] <= _now():
+                raise ValueError("配对请求已过期或已处理")
+            now = _now()
+            self.connection.execute("UPDATE channel_pairings SET status=?,updated_at=? WHERE id=?",
+                                    (status, now, pairing_id))
+            if status == "approved":
+                self.connection.execute(
+                    "INSERT INTO channel_bindings(channel,account_id,conversation_id,conversation_type,"
+                    "subject_id,subject_name,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(channel,account_id,conversation_id) DO UPDATE SET subject_id=excluded.subject_id,"
+                    "subject_name=excluded.subject_name,updated_at=excluded.updated_at",
+                    (pairing["channel"], pairing["account_id"], pairing["conversation_id"],
+                     pairing["conversation_type"], pairing["subject_id"], pairing["subject_name"], now, now))
+            return dict(self.connection.execute("SELECT * FROM channel_pairings WHERE id=?", (pairing_id,)).fetchone())
+
+    def channel_session(self, channel, account_id, conversation_id):
+        row = self.connection.execute(
+            "SELECT * FROM channel_sessions WHERE channel=? AND account_id=? AND conversation_id=?",
+            (channel, account_id, conversation_id)).fetchone()
+        return dict(row) if row else None
+
+    def channel_session_set(self, channel, account_id, conversation_id, last_run_id):
+        now = _now()
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO channel_sessions(channel,account_id,conversation_id,last_run_id,updated_at) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(channel,account_id,conversation_id) DO UPDATE SET "
+                "last_run_id=excluded.last_run_id,updated_at=excluded.updated_at",
+                (channel, account_id, conversation_id, last_run_id, now))
+
+    def channel_unbind(self, channel, account_id, conversation_id):
+        with self.connection:
+            cursor = self.connection.execute(
+                "DELETE FROM channel_bindings WHERE channel=? AND account_id=? AND conversation_id=?",
+                (channel, account_id, conversation_id))
+        return bool(cursor.rowcount)
 
     def close(self):
         self.connection.close()

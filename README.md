@@ -1,84 +1,158 @@
-# Quant Research Agent
+# qagent
 
-本地命令行投研助手：公开资料研究、经用户批准的长期记忆、多 ETF 动量轮动实验。
+本地运行的证据驱动研究助手。它能查询公开资料、读取用户明确授权的材料、运行固定的多 ETF 动量实验，并在用户批准后跨会话使用长期记忆。它也支持创业、产品、副业、项目和职业机会分析。
 
-开发与验收规范见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，协作规则见 [AGENTS.md](AGENTS.md)。
+它是一个本地 CLI 单 Agent：Node.js 只负责启动和准备 uv，实际逻辑运行在 Python；交互界面是 Textual 终端，不是网页。模型只能调用项目定义的工具，不能执行任意 Shell、下单或自行批准记忆。
 
-Python 3.12；使用现有 OpenAI Chat Completions 兼容服务。行情和资讯采用免费公开接口，不能保证实时性和完整性。研究回测不是真实账户收益承诺。
+详细接口和验收约束见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，商业机会方法库见 [docs/OPPORTUNITY_FRAMEWORK.md](docs/OPPORTUNITY_FRAMEWORK.md)，实际测试记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。
 
-架构参考 Hello-Agents / Hermes；投资方法参考 TradingAgents / Qlib / RD-Agent，不引入这些项目的运行框架。
+## 架构
 
-## 安装与模型配置
+```text
+qagent / qagent chat
+        ↓
+Node 启动器 → uv + Python 3.12
+        ↓
+CLI → Textual TUI 或 plain 行模式
+        ↓
+agent.run_research
+        ↓
+模型循环 + 显式工具白名单
+   ├─ data.py       行情、新闻、公告和研报目录
+   ├─ materials.py  授权文件和受限公开材料
+   ├─ backtest.py   固定 ETF 动量轮动实验
+   ├─ 方法库         商业机会七节点 Markdown
+   └─ store.py      SQLite 记忆、运行、事件和实验记录
+```
 
-### npm / npx 包
+运行数据保存在 `QAGENT_HOME`，默认是 `~/.qagent`；源代码目录不保存个人记忆或研究缓存。模型密钥只存在于当前进程，不写入报告或 SQLite。
 
-需要 Node.js 20+。npm 包包含完整应用代码；首次启动自动准备 uv、Python 3.12 和锁定依赖，可能需要数分钟和较多磁盘空间，之后复用安装环境。需要能访问 npm、GitHub Releases 和 Python 包下载服务。
+## 安装和配置
 
-自动准备 uv 支持 Windows x64、Linux x64；其他平台请先按 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv，Python 科学计算依赖仍需该平台支持。自动下载使用固定版本及 SHA256 校验，失败会停止并给出提示。
+### GitHub / npm
 
-发布到 npm 后，安装包名为 `qagent-research`，CLI 命令仍然是 `qagent`：
+需要 Node.js 20+。首次运行会准备固定版本的 uv、Python 3.12 和锁定依赖。
+
+启动器支持 Windows x64、macOS Intel/Apple Silicon、Linux x64/ARM64。Termux 使用 Android 自己的运行环境，需先在 Termux 中安装可用的 `uv`；启动器不会把 Linux glibc 二进制误装到 Android。Termux 上的科学计算依赖仍需以实际设备安装结果为准。
 
 ```powershell
 npm install -g --allow-git github:magnesium037-dev/quant-research-agent
 qagent doctor
 qagent chat
-# 临时运行，不全局安装
+
+# 不安装到全局
 npx --yes --allow-git --package github:magnesium037-dev/quant-research-agent qagent --help
 ```
 
-要求 Node.js 20+。包包含 Python 源码及 uv.lock，不包含密钥、个人记忆和运行缓存。模型环境变量与下方相同，相对材料路径以调用命令时的目录为准。运行环境缓存在 `~/.cache/quant-research-agent`，无需向全局安装目录写入；研究数据独立保存在 `~/.qagent`。npm 安装阶段不运行下载脚本，首次运行 qagent 时准备运行环境。
+首次准备需要访问 GitHub Releases 和 Python 包下载服务；环境准备完成后会复用本地缓存。Node.js 18 及以下不受支持。
 
-当前公开仓库默认分支就是可运行分支，因此不需要 `git+` 前缀或分支后缀。新版 npm 可能默认禁用 Git 依赖，需要显式加 `--allow-git`。公开 npm 的包名不能使用 `qagent`，因为该名称已被其他项目占用；本项目保留 npm 元数据名 `qagent-research`，从 GitHub 安装后命令仍为 `qagent`。Node 18 及以下不支持当前启动器。
-
-### Python 开发安装
+### Python 开发环境
 
 ```powershell
 uv sync --locked
 $env:LLM_BASE_URL = 'https://api.deepseek.com'
 $env:LLM_MODEL = 'deepseek-flash'
-# 在本机安全设置 LLM_API_KEY，不把密钥提交到 Git 或发送到聊天中。
+# 请在本机安全设置 LLM_API_KEY
 uv run qagent doctor
-uv run qagent doctor --online
+uv run qagent doctor --online  # 明确发起一次真实 API 调用
 ```
 
-如果已经配置了 Reasonix，qagent 在环境变量缺失时会读取 `~/.reasonix/config.json` 的 `apiKey` 和 `model`，默认使用 `https://api.deepseek.com`；显式的 `LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY` 优先。导入的密钥只用于当前进程，不写入 qagent 数据库或报告，也可用 `QAGENT_CONFIG` 指定同格式文件。
+也可以从 `QAGENT_CONFIG` 或 `~/.reasonix/config.json` 读取 `apiKey`、`model` 和 `baseUrl`。显式环境变量优先。项目使用 OpenAI Chat Completions 兼容接口，不会静默切换模型或供应商。
 
-DeepSeek V4.1 Flash 的官方 API 名称是 `deepseek-flash`，见 [DeepSeek 官方文档](https://api-docs.deepseek.com/)。服务仍通过显式配置选择，不静默替换模型。`doctor --online` 会产生一次真实 API 调用；普通 doctor 不联网。
+### 飞书双向聊天（可选）
 
-工具能力探测使用 `tool_choice=auto` 并检查实际返回的工具名及参数，兼容 DeepSeek 默认思考模式；该模式不接受强制指定工具，见 [接口说明](https://api-docs.deepseek.com/api/create-chat-completion/)。探测失败会明确停止，不改用其他模型。
+配置飞书企业自建应用的机器人能力和 `im.message.receive_v1` 事件后，在启动 TUI 前设置 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET`，再运行 `qagent chat`。TUI 使用官方 `lark-oapi` SDK 建立 WebSocket 长连接；首次私聊或群聊 `@机器人` 会弹出本机绑定确认，未绑定会话不会调用模型。群聊绑定与私聊分开，群聊始终要求 `@机器人`。飞书侧不开放本机记忆审批等管理命令。
 
-## 使用
+## 最小用法
 
 ```powershell
-# 裸运行直接进入交互会话
-qagent
-uv run qagent chat
-uv run qagent ask '最近一周有哪些影响宽基ETF的事件？请列证据与反证。'
-uv run qagent ask '分析这份材料，区分事实与作者观点' --file 'C:/Research/report.pdf'
-uv run qagent backtest --symbols 510300 510500 159915 --start 2022-01-01 --end 2024-12-31 --lookback 60 --top-k 2 --rebalance weekly
-uv run qagent memory add '我优先研究宽基ETF，关注回撤和换手成本'
-uv run qagent memory pending
-uv run qagent memory approve MEMORY_ID
-uv run qagent runs list
+qagent                         # 进入 Textual 终端界面
+qagent chat --plain            # 简易行模式
+qagent ask '最近一周有哪些影响宽基 ETF 的事件？请列证据与反证。'
+qagent ask '区分这份材料中的事实与作者观点' --file 'C:/Research/report.pdf'
+
+qagent backtest --symbols 510300 510500 159915 `
+  --start 2022-01-01 --end 2024-12-31 --lookback 60 --top-k 2 --rebalance weekly
 ```
 
-示例ETF只是演示输入，不构成投资推荐。回测要求所有ETF在指定区间及热身期都有完整日线和可用交易日历；不满足时明确失败，不自动删除缺失日期。
+`ask` 和 `chat` 支持 `--no-thinking`。TUI 中 Enter 发送，Shift+Enter/Ctrl+J 换行，Ctrl+T 切换推理显示，Ctrl+X 查看实际初始上下文，Ctrl+R 选择历史，Esc 取消当前运行，Ctrl+Q 退出。接口没有返回推理时，界面会明确说明，不会编造 Chain of Thought。
 
-全区间、前 70% 开发段、后 30% 留出段分别从现金开始。周轮动遇到区间首日不是调仓日时持币等待；等权买入持有基准在各段首日按每只 `1/N` 的前收盘目标买入，费用或跳空可造成部分成交。每份结果列出 0/5/10bp 成本比较与重复查看留出的标记。`runs show RUN_ID` 查看完整逐日持仓和成交记录。
+## 记忆治理
 
-数据默认保存到 `~/.qagent`，可用 `QAGENT_HOME` 指定目录。长期记忆、来源材料、实验和会话保存在本机，不随仓库上传；调用云端模型时，当前问题、相关已批准记忆和必要材料摘要会发送给配置的服务商。密钥不写入报告。
+记忆分为两层：`runs/events` 保存情景记录，`memories` 保存长期候选和已批准内容。模型可以把用户明确表达的长期偏好、项目约定、已确认决策、方法或约束提交为 `pending` 建议，但不能直接写成生效记忆。
 
-每次问题重新加载已批准记忆，优先最近修改项，最多传入 8000 字符，超过时明确标示截断。完整记忆仍可通过 `memory list` 查看。
+```text
+用户表达长期信息
+        ↓
+模型 propose_memory（带分类）
+        ↓
+pending：preference / project / decision / method / constraint / general
+        ↓ 用户批准
+approved
+        ↓
+下一次请求注入上下文
+```
 
-## 验证
+报告会显示待确认记忆的完整 ID 和审批命令。TUI 支持：
+
+```text
+/memory
+/approve MEMORY_ID
+/reject MEMORY_ID
+```
+
+CLI 支持：
+
+```powershell
+qagent memory add '项目使用 Python 和 SQLite' --category project
+qagent memory pending
+qagent memory approve MEMORY_ID
+qagent memory reject MEMORY_ID
+qagent memory list
+```
+
+旧版 SQLite 数据库启动时会自动补上 `category` 字段，并将旧记忆归为 `general`。当前版本不会后台自动批准、静默巩固或删除记忆；这保证长期上下文仍由用户控制。
+
+## 商业机会分析
+
+商业问题会读取 [项目与商业机会方法库](docs/OPPORTUNITY_FRAMEWORK.md) 的核心索引，必要时再读取具体章节。七个节点是：需求、使用者、场景、替代方案、从知道到行动、市场与竞争、我为什么做它。
+
+方法库要求每个判断区分：
+
+```text
+观测 → 解释 → 竞争解释 → 证据强度 → 下一步验证
+```
+
+方法库本身是版本控制的研究资料，不是自动学习日志。模型可以提出修订建议，修改必须经过人工审阅并由 Git 留痕；普通金融问题不会强行套用这套框架。
+
+## 回测口径
+
+回测只接受固定参数网格：lookback 为 20/60/120 日，top_k 为 1/2，再平衡为 daily/weekly。默认 60 日、top_k=2、weekly。信号使用前收盘，下一交易日开盘成交；共享现金、先卖后买、只做多，不自动补齐缺失行情。
+
+结果分别计算完整区间、前 70% 开发段和后 30% 留出段，并比较 0/5/10bp 成本。失败、缺失数据、目录与正文的区别都会明确写出。示例 ETF 仅用于演示，不构成投资建议或真实账户收益承诺。
+
+LLM 与量化严格隔离：LLM 只做信息提取、工具调度和结果复盘；不产生交易信号、不数浪、不看盘，也不自行计算 K 线或指标。所有行情、指标、信号、竞价和成交都由 Python 确定性代码完成。
+
+行情工具通过腾讯财经公开网页接口一次批量取得实时快照，返回 `status`、`data_date`、`quote_time`、紧凑 `data` 和 `missing`；它不是交易所 Level-2，接口也没有公开稳定性承诺。缺失代码不会触发拆分重试，未提供字段不会推断或补造。mootdx 仅保留为诊断候选，当前实测返回空表，因此没有加入运行依赖。RSS 多源摄取、发布时间对齐、实体标签和第二信道因子仍是待实现的数据管道，尚未在系统中伪装成可用能力。
+
+用户问“看什么、选哪只、什么底层可看”时，不再要求先提供代码。`screen_etfs` 会在固定 10 只跨资产 ETF 池中，用最近完整交易日的 20/60 日收益等权打分；两段收益都为正才进入候选，默认返回前 3 名，再附上实时展示价。候选池、公式、信号日期和缺失项全部随结果返回，LLM 只能解释，不能改写排名。
+
+## 边界
+
+- 没有实盘下单、后台监控、网页服务或任意代码执行。
+- 飞书长连接仅在 TUI 进程运行期间工作；关闭 TUI 不会保持双向机器人在线。密钥不写入 SQLite、报告或日志。
+- MVP 只读取批量实时快照，不做集合竞价、分时序列、波浪理论和国际政治交易学；开盘缺口与成交量比例代理、GPR 和其他复杂因子分别推迟到后续版本。
+- 当前新闻不会进入历史回测信号。
+- 新闻、公告和研报目录不会冒充已阅读全文。
+- 回测由程序确定性计算，模型只解释返回的数值。
+- 默认离线测试使用合成数据和假模型；真实 API、行情连通性和覆盖范围单独验收。
+
+## 开发验证
 
 ```powershell
 uv run python -m unittest discover -s tests -v
-uv run qagent --help
+$env:ComSpec = 'C:\Windows\System32\cmd.exe'
+npm test
 ```
 
-离线测试使用合成数据和假模型。实际测试与外部接口限制见 [docs/VALIDATION.md](docs/VALIDATION.md)。
-
-## 研究限制
-
-后复权小数单位、前收盘定量、次开盘同价顺序撮合与比例摩擦仅用于研究；不复现整手、最低佣金、分红到账、涨跌停排队与市场冲击。固定ETF池也有选择偏差。最新新闻只用于当前研究，不注入历史交易信号。目录和摘要不能冒充报告全文。
+当前验收记录见 [docs/VALIDATION.md](docs/VALIDATION.md)。

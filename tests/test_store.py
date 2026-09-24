@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from qagent.store import Store
@@ -17,9 +18,10 @@ class StoreTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_memory_approval_restart_edit_delete(self):
-        pending = self.store.memory_add("低换手", source="agent:run", pending=True)
+        pending = self.store.memory_add("低换手", source="agent:run", pending=True, category="preference")
         self.assertEqual(self.store.memory_list(), [])
         approved = self.store.memory_approve(pending["id"])
+        self.assertEqual(approved["category"], "preference")
         self.assertEqual(approved, self.store.memory_approve(pending["id"]))
         self.assertEqual(len(self.store.memory_list()), 1)
         self.store.close()
@@ -30,6 +32,22 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(edited["text"], "控制回撤")
         self.assertTrue(self.store.memory_delete(pending["id"])["deleted"])
         self.assertFalse(self.store.memory_delete(pending["id"])["deleted"])
+        with self.assertRaises(ValueError):
+            self.store.memory_add("错误分类", category="unknown")
+
+    def test_existing_memory_table_gets_category(self):
+        legacy = self.home / "legacy"
+        legacy.mkdir()
+        connection = sqlite3.connect(legacy / "research.db")
+        connection.execute("""CREATE TABLE memories (
+            id TEXT PRIMARY KEY, text TEXT NOT NULL, source TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('approved','pending','rejected')),
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+        connection.execute("INSERT INTO memories VALUES ('old','旧记忆','user','approved','now','now')")
+        connection.commit()
+        connection.close()
+        with closing(Store(legacy)) as migrated:
+            self.assertEqual(migrated.memory_list()[0]["category"], "general")
 
     def test_rejected_cannot_be_approved_and_edits_do_not_change_status(self):
         memory = self.store.memory_add("想法", pending=True)
@@ -100,6 +118,21 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.store.record_experiment(run, {}, "missing", success)
         self.assertEqual(len(self.store.get_run(run)["experiments"]), 2)
+
+    def test_channel_pairing_approval_and_session_are_durable(self):
+        request, created = self.store.pairing_request(
+            "feishu", "app", "chat", "p2p", "user", "Alice", "ABCD2345")
+        self.assertTrue(created)
+        self.assertEqual(self.store.pairing_list()[0]["code"], "ABCD2345")
+        approved = self.store.pairing_decide(request["id"], "approved")
+        self.assertEqual(approved["status"], "approved")
+        self.assertEqual(self.store.channel_binding("feishu", "app", "chat")["subject_id"], "user")
+        self.store.channel_session_set("feishu", "app", "chat", "run-1")
+        self.assertEqual(self.store.channel_session("feishu", "app", "chat")["last_run_id"], "run-1")
+        self.store.close()
+        self.store = Store(self.home)
+        self.assertTrue(self.store.channel_unbind("feishu", "app", "chat"))
+        self.assertIsNone(self.store.channel_binding("feishu", "app", "chat"))
 
 
 if __name__ == "__main__":

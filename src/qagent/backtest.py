@@ -1,4 +1,4 @@
-"""Deterministic, fractional hfq ETF portfolio research; no trading interface."""
+"""Deterministic ETF portfolio research; the LLM never creates signals here."""
 import hashlib
 import json
 import math

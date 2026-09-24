@@ -16,6 +16,9 @@ def parser():
     ask.add_argument("--file", action="append", default=[])
     chat = sub.add_parser("chat")
     chat.add_argument("--file", action="append", default=[])
+    chat.add_argument("--plain", action="store_true", help="使用简易行模式（管道输入自动启用）")
+    for command in (ask, chat):
+        command.add_argument("--no-thinking", action="store_true", help="隐藏接口返回的推理内容")
     backtest = sub.add_parser("backtest")
     backtest.add_argument("--symbols", nargs="+", required=True)
     backtest.add_argument("--start", required=True)
@@ -25,7 +28,9 @@ def parser():
     backtest.add_argument("--rebalance", choices=["daily", "weekly"], default="weekly")
     backtest.add_argument("--initial-cash", type=float, default=100000)
     memory = sub.add_parser("memory").add_subparsers(dest="action", required=True)
-    memory.add_parser("add").add_argument("text")
+    add_memory = memory.add_parser("add")
+    add_memory.add_argument("text")
+    add_memory.add_argument("--category", choices=["preference", "project", "decision", "method", "constraint", "general"], default="general")
     edit = memory.add_parser("edit")
     edit.add_argument("id")
     edit.add_argument("text")
@@ -45,7 +50,7 @@ def output(value):
     print(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, indent=2))
 
 
-def write_report(home, result):
+def write_report(home, result, display=True):
     folder = home / "reports"
     folder.mkdir(parents=True, exist_ok=True)
     # Store IDs must never become paths supplied by models.
@@ -54,8 +59,9 @@ def write_report(home, result):
         raise ValueError("无效的运行 ID")
     path = folder / f"{run_id}.md"
     path.write_text(clean(result["report"]), encoding="utf-8")
-    output(result["report"])
-    print(f"\n运行: {run_id} | {result['status']} | {path}")
+    if display:
+        output(result["report"])
+        print(f"\n运行: {run_id} | {result['status']} | {path}")
 
 
 def doctor(online=False):
@@ -77,7 +83,7 @@ def doctor(online=False):
 
 
 def _chat_help():
-    print("命令: /new 新会话 | /sessions 列出会话 | /resume ID 切换会话 | /open ID 查看报告 | /exit 退出")
+    print("命令: /new 新会话 | /sessions 列出会话 | /resume ID 切换会话 | /open ID 查看报告 | /context 查看上轮注入 | /memory 待确认记忆 | /approve ID | /reject ID | /thinking on|off | /exit")
 
 
 def _chat_sessions(store):
@@ -123,14 +129,34 @@ def main(argv=None):
         store = Store(home)
         if args.command in ("ask", "chat"):
             allowed = [str(Path(p).expanduser().resolve(strict=True)) for p in args.file]
+            if args.command == "chat" and not args.plain and sys.stdin.isatty() and sys.stdout.isatty():
+                from .tui import ResearchApp
+                ResearchApp(home, allowed, show_thinking=not args.no_thinking).run()
+                return 0
+            show_thinking = not args.no_thinking
+            def progress(kind, value):
+                if kind == "context":
+                    output(f"[上下文] 模型 {value['model']}；已批准记忆 {value['memory_characters']} 字符"
+                           f"（截断：{value['memory_truncated']}）；前轮摘录 {value['previous_characters']} 字符"
+                           f"（截断：{value['previous_truncated']}）；商业方法 {value.get('business_framework_characters', 0)} 字符；"
+                           f"待确认记忆 {value.get('pending_memory_count', 0)} 条；授权文件 {value['authorized_files']} 个；工具 {len(value['tools'])} 个。")
+                elif kind == "request":
+                    output(f"[请求 {value['round']}] 消息 {value['characters']} 字符（非 token 数）；工具结果 {value['tool_results']} 条；等待模型…")
+                elif kind == "reasoning" and show_thinking:
+                    output("[模型推理 · 接口返回内容，非核验结论]\n" + value)
+                elif kind == "tool":
+                    output("[调用工具] " + value)
             if args.command == "ask":
-                result = run_research(args.question, store, allowed_files=allowed)
+                result = run_research(args.question, store, allowed_files=allowed, on_progress=progress)
                 write_report(home, result)
                 return 0 if result["status"] == "completed" else 1
             active = None
             print("┌─ qagent 研究会话 ───────────────────────────────────────┐")
             print("│ 输入问题，或输入 /help 查看会话命令。                    │")
             print("└──────────────────────────────────────────────────────────┘")
+            config = model_config()
+            output(f"模型：{config['model']} | 配置来源：{config['source']}")
+            print("/context 查看上轮初始上下文；/thinking off 隐藏推理。推理在每次模型请求完成后显示。")
             while True:
                 try:
                     label = active["id"][:8] if active else "new"
@@ -151,6 +177,23 @@ def main(argv=None):
                 if question == "/sessions":
                     _chat_sessions(store)
                     continue
+                if question == "/context":
+                    output((active.get("result") or {}).get("context", "这条旧记录未保存上下文。") if active else "尚无请求；首轮发送后可查看。")
+                    continue
+                if question == "/memory":
+                    output(store.memory_list("pending"))
+                    continue
+                if question.startswith(("/approve ", "/reject ")):
+                    command, prefix = question.split(None, 1)
+                    matches = [item for item in store.memory_list("pending") if item["id"].startswith(prefix.strip())]
+                    if len(matches) != 1:
+                        raise ValueError("待确认记忆 ID 不存在或不唯一")
+                    output((store.memory_approve if command == "/approve" else store.memory_reject)(matches[0]["id"]))
+                    continue
+                if question in ("/thinking on", "/thinking off"):
+                    show_thinking = question.endswith(" on")
+                    print("推理显示已" + ("开启。" if show_thinking else "关闭。"))
+                    continue
                 if question.startswith("/open "):
                     active = _chat_open(store, question.split(None, 1)[1].strip())
                     continue
@@ -161,12 +204,10 @@ def main(argv=None):
                 if question.startswith("/"):
                     print("未知命令，输入 /help 查看可用命令。")
                     continue
-                prompt = question
+                previous = None
                 if active and isinstance(active.get("result"), dict):
-                    previous = active["result"].get("report", "")
-                    if previous:
-                        prompt = f"请继续此前会话。此前报告摘要如下：\n{previous[-6000:]}\n\n新的问题：{question}"
-                result = run_research(prompt, store, allowed_files=allowed)
+                    previous = {"question": active["question"], "answer": active["result"].get("report", "")}
+                result = run_research(question, store, allowed_files=allowed, previous=previous, on_progress=progress)
                 active = store.get_run(result["run_id"])
                 write_report(home, result)
         elif args.command == "memory":
@@ -174,7 +215,7 @@ def main(argv=None):
             if action in ("list", "pending"):
                 result = store.memory_list(status="pending" if action == "pending" else "approved")
             elif action == "add":
-                result = store.memory_add(clean(args.text))
+                result = store.memory_add(clean(args.text), category=args.category)
             elif action == "edit":
                 result = store.memory_edit(args.id, clean(args.text))
             else:

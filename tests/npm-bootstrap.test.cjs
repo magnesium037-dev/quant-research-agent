@@ -10,6 +10,13 @@ const { ensureUv, download, ASSETS } = require('../bin/bootstrap.cjs');
 test('existing uv reused; unsupported setup fails clearly', async () => {
   assert.equal(await ensureUv({ run: () => ({ status: 0 }) }), 'uv');
   await assert.rejects(ensureUv({ platform: 'other', run: () => ({ status: 1 }) }), /does not support/);
+  await assert.rejects(ensureUv({ platform: 'linux', arch: 'arm64', env: { TERMUX_VERSION: '0.118' }, run: () => ({ status: 1 }) }), /Termux requires uv/);
+});
+
+test('official uv assets cover macOS and Linux ARM', () => {
+  assert.match(ASSETS['darwin-arm64'][0], /apple-darwin/);
+  assert.match(ASSETS['darwin-x64'][0], /apple-darwin/);
+  assert.match(ASSETS['linux-arm64'][0], /unknown-linux-gnu/);
 });
 
 test('bootstrap verifies before extraction, cleans failures, caches successful binary', async () => {
@@ -26,7 +33,7 @@ test('bootstrap verifies before extraction, cleans failures, caches successful b
     fs.writeFileSync(path.join(options.env.QAGENT_UV_EXTRACT, 'uv.exe'), 'fake exe');
     return { status: 0 };
   };
-  const options = { platform: 'win32', arch: 'x64', cache, run, fetchArchive: async () => bytes };
+  const options = { platform: 'win32', arch: 'x64', env: {}, cache, run, fetchArchive: async () => bytes };
   try {
     await assert.rejects(ensureUv(options), /SHA256/);
     assert.equal(extractions, 0);
